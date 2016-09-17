@@ -8,11 +8,12 @@ import com.google.api.services.vision.v1.Vision;
 import com.google.api.services.vision.v1.VisionScopes;
 import com.google.api.services.vision.v1.model.*;
 import com.google.common.collect.ImmutableList;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.web.bind.annotation.*;
@@ -30,8 +31,9 @@ import java.util.stream.Collectors;
  *
  */
 @RestController
-@Slf4j
-public class ImageLabelsController { //TODO rename it somehow
+public class ImageLabelsController {
+
+    Logger log = LoggerFactory.getLogger(ImageLabelsController.class);
 
     private Vision vision;
 
@@ -163,7 +165,7 @@ public class ImageLabelsController { //TODO rename it somehow
     @RequestMapping(value = "/getLastImage")
     public LastImageBean getLastImage() {
         try {
-            return LastImageBean.builder().image(lastImageBase64).labels(getImageLabels(lastImageBase64)).build();
+            return new LastImageBean(lastImageBase64, getImageLabels(lastImageBase64));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
