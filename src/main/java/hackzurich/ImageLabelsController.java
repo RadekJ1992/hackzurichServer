@@ -9,13 +9,10 @@ import com.google.api.services.vision.v1.VisionScopes;
 import com.google.api.services.vision.v1.model.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.ByteStreams;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.DefaultHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
@@ -35,6 +32,7 @@ import java.util.stream.Collectors;
  *
  */
 @RestController
+@Slf4j
 public class ImageLabelsController { //TODO rename it somehow
 
     private Vision vision;
@@ -168,7 +166,9 @@ public class ImageLabelsController { //TODO rename it somehow
      */
     @RequestMapping(value = "/setMobileIdAndKeywords")
     public void setMobileIdAndKeywords(@RequestParam(value = "mobileId") String mobileId, @RequestParam(value = "keywords") String keywords) {
+        log.info("mobileId = " + mobileId);
         this.mobileId = mobileId;
+        log.info("keywords = " + keywords);
         this.keywords = Arrays.stream(keywords.split(",")).collect(Collectors.toList());
     }
 
