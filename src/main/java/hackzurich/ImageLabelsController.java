@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -137,10 +138,28 @@ public class ImageLabelsController {
             org.apache.http.HttpResponse resp  = httpClient.execute(request);
             log.info(resp.toString());
             return fileUrl;
-        }catch (Exception ex) {
+        } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
+    }
 
+    @Scheduled(fixedRate = 5000)
+    public void sendToTopic() {
+        try  {
+            String fileUrl = "/lastPhoto";
+            HttpClient httpClient = new DefaultHttpClient();
+            HttpPost request = new HttpPost("https://fcm.googleapis.com/fcm/send");
+            request.addHeader("Content-Type", "application/json");
+            request.addHeader("Authorization","key=AIzaSyATEU5Q4_ILtSJKYA07Gb1OD156akTL9VI");
+            StringEntity params =new StringEntity("{ \"data\": {\"body\":\"" + fileUrl + "\" }, " +
+                    "\"to\" : \"/topics/lastPhoto\"}");
+            request.setEntity(params);
+            log.info("Sending photo to topic lastPhoto");
+            org.apache.http.HttpResponse resp  = httpClient.execute(request);
+            log.info(resp.toString());
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     /**
@@ -225,5 +244,11 @@ public class ImageLabelsController {
     @RequestMapping(value = "/getLastPhoto/{id}", method = RequestMethod.GET, produces = MediaType.IMAGE_JPEG_VALUE)
     public byte[] getLastPhoto(@PathVariable("id") Integer id) throws IOException {
         return Base64.getDecoder().decode(photosMap.get(id));
+    }
+
+    @ResponseBody
+    @RequestMapping(value = "/lastPhoto", method = RequestMethod.GET, produces = MediaType.IMAGE_JPEG_VALUE)
+    public byte[] lastPhoto() throws IOException {
+        return Base64.getDecoder().decode(lastImageBase64);
     }
 }
