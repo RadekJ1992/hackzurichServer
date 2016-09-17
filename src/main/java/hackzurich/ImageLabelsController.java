@@ -17,7 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Main Controller of the application
@@ -35,6 +38,8 @@ public class ImageLabelsController { //TODO rename it somehow
     private ResourceLoader resourceLoader;
 
     private static final String APPLICATION_NAME = "Hack Zurich 2016 1019";
+
+    List<String> keywords = new ArrayList<>();
 
     /**
      * Connects to the Vision API using Application Credentials.
@@ -65,12 +70,12 @@ public class ImageLabelsController { //TODO rename it somehow
      * @return list of possible labels
      */
     @RequestMapping(value = "/upload") //TODO add method = RequestMethod.POST
-    public List<EntityAnnotation> upload(@RequestParam(value="imageBase64") String imageBase64) throws IOException {
+    public boolean upload(@RequestParam(value="imageBase64") String imageBase64) throws IOException {
         if (vision == null) {
             vision = getVisionService();
         }
         //TODO fix base64 decoding now it throws "illegal character 20"
-        //Image img  = new Image().encodeContent(Base64.getDecoder().decode());
+        //Image img  = new Image().encodeContent(Base64.getDecoder().decode(imageBase64.replaceAll("\\", "")));
         AnnotateImageRequest request =
                 new AnnotateImageRequest()
                         .setImage(new Image().encodeContent(
@@ -93,6 +98,30 @@ public class ImageLabelsController { //TODO rename it somehow
         if (response.getLabelAnnotations() == null) {
             throw new RuntimeException();
         }
-        return response.getLabelAnnotations();
+        List<EntityAnnotation> annotationsList = response.getLabelAnnotations();
+
+        return annotationsList.stream()
+                .map(EntityAnnotation::getDescription)
+                .filter(annotation -> !annotation.contains(" ")) // we don't want complex keywords
+                // if any of returned labels is keyword or any synonym of these labels is the keyword return true
+                .anyMatch(annotation -> keywords.contains(annotation) || getSynonyms(annotation).removeAll(keywords));
     }
+
+    /**
+     * Get word synonyms from thesaurus API via HTTP GET request
+     */
+    @RequestMapping(value = "/thesaurusTest")
+    public List<String> getSynonyms(@RequestParam(value="word") String word) {
+        return ThesaurusUtil.getSynonymsMock(word); //TODO removeMock
+    }
+
+    /**
+     * Sets global keywords for image labels
+     * @param keywords keywords seperated by comma ','
+     */
+    @RequestMapping(value = "/setKeywords")
+    public void setKeywords(@RequestParam(value = "keywords") String keywords) {
+        this.keywords = Arrays.stream(keywords.split(",")).collect(Collectors.toList());
+    }
+
 }
