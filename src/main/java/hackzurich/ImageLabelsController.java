@@ -154,9 +154,9 @@ public class ImageLabelsController {
             StringEntity params =new StringEntity("{ \"data\": {\"body\":\"" + fileUrl + "\" }, " +
                     "\"to\" : \"/topics/lastPhoto\"}");
             request.setEntity(params);
-            log.info("Sending photo to topic lastPhoto");
+           // log.info("Sending photo to topic lastPhoto");
             org.apache.http.HttpResponse resp  = httpClient.execute(request);
-            log.info(resp.toString());
+            //log.info(resp.toString());
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
@@ -186,7 +186,42 @@ public class ImageLabelsController {
         log.info("mobileId = " + mobileId);
         this.mobileId = mobileId;
         log.info("keywords = " + keywords);
-        this.keywords = Arrays.stream(keywords.split(",")).collect(Collectors.toList());
+        this.keywords = new ArrayList<>();
+        this.keywords.add(keywords);
+        // put some synonyms - widen the search
+        switch (keywords) {
+            case "pet":
+                this.keywords.add("mammal");
+                this.keywords.add("dog");
+                this.keywords.add("cat");
+                this.keywords.add("pig");
+                this.keywords.add("fish");
+                this.keywords.add("bird");
+                break;
+            case "person":
+                this.keywords.add("man");
+                this.keywords.add("woman");
+                this.keywords.add("people");
+                this.keywords.add("child");
+                this.keywords.add("male");
+                break;
+            case "drone":
+                this.keywords.add("aircraft");
+                this.keywords.add("aviation");
+                this.keywords.add("fly");
+                break;
+            case "fire":
+                this.keywords.add("wildfire");
+                this.keywords.add("bonfire");
+                this.keywords.add("fly");
+                break;
+            case "waves":
+                this.keywords.add("water");
+                this.keywords.add("wave");
+                break;
+            default:
+                break;
+        }
     }
 
     @RequestMapping(value = "/getLastImage")
@@ -237,7 +272,7 @@ public class ImageLabelsController {
             throw new RuntimeException();
         }
         return response.getLabelAnnotations().stream()
-                .map(EntityAnnotation::getDescription).collect(Collectors.toList());
+                .map(EntityAnnotation::getDescription).map(String::toLowerCase).collect(Collectors.toList());
     }
 
     @ResponseBody

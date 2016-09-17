@@ -41,7 +41,7 @@ public class ThesaurusUtil {
             JSONArray finalResult = new JSONArray(tokener);
             List<String> result = new ArrayList<>();
             for (int i = 0; i < finalResult.length(); i++) {
-                result.add((String) finalResult.get(i));
+                result.add(((String) finalResult.get(i)).toLowerCase());
             }
             return result;
         } catch (IOException e) {
