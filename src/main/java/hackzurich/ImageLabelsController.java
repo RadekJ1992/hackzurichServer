@@ -111,9 +111,9 @@ public class ImageLabelsController {
                 .anyMatch(annotation -> keywords.contains(annotation)
                                 // we create new ArrayList because getSynonyms returns immutable list
                                 || new ArrayList<>(getSynonyms(annotation)).removeAll(keywords))) {
-            return "Notified user " + notifyUser();
+            return "User notified (image url - " + notifyUser() + ")\n";
         } else {
-            return "User not notified";
+            return "User not notified\n";
         }
     }
 
@@ -269,7 +269,7 @@ public class ImageLabelsController {
         assert batchResponse.getResponses().size() == 1;
         AnnotateImageResponse response = batchResponse.getResponses().get(0);
         if (response.getLabelAnnotations() == null) {
-            throw new RuntimeException();
+            return new ArrayList<>();
         }
         return response.getLabelAnnotations().stream()
                 .map(EntityAnnotation::getDescription).map(String::toLowerCase).collect(Collectors.toList());
