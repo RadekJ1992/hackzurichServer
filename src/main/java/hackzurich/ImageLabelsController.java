@@ -8,22 +8,20 @@ import com.google.api.services.vision.v1.Vision;
 import com.google.api.services.vision.v1.VisionScopes;
 import com.google.api.services.vision.v1.model.*;
 import com.google.common.collect.ImmutableList;
+import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.client.DefaultHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -59,6 +57,12 @@ public class ImageLabelsController {
      * Last uploaded image (currently stored in memory)
      */
     String lastImageBase64 = "";
+
+
+    /**
+     * Map unique photo id -> photo
+     */
+    Map<Integer, String> photosMap = new HashMap<Integer, String>();
 
     /**
      * Connects to the Vision API using Application Credentials.
@@ -106,8 +110,7 @@ public class ImageLabelsController {
                 .anyMatch(annotation -> keywords.contains(annotation)
                                 // we create new ArrayList because getSynonyms returns immutable list
                                 || new ArrayList<>(getSynonyms(annotation)).removeAll(keywords))) {
-            notifyUser();
-            return "Notified user";
+            return "Notified user " + notifyUser();
         } else {
             return "User not notified";
         }
@@ -116,19 +119,24 @@ public class ImageLabelsController {
     /**
      * Notifies user via FireBase
      */
-    public void notifyUser() {
-        try (CloseableHttpClient httpClient = HttpClients.custom().build()) {
+    public String notifyUser() {
+        try  {
+            Integer uniquePhotoId = new Random().nextInt();
+            photosMap.put(uniquePhotoId, lastImageBase64);
+            String fileUrl = "/getLastPhoto/" + uniquePhotoId;
+            HttpClient httpClient = new DefaultHttpClient();
             HttpPost request = new HttpPost("https://fcm.googleapis.com/fcm/send");
-            request.addHeader("content-type", "application/json");
-            // request.addHeader("Accept","application/json");
+            request.addHeader("Content-Type", "application/json");
             request.addHeader("Authorization","key=AIzaSyATEU5Q4_ILtSJKYA07Gb1OD156akTL9VI");
-
-            StringEntity params =new StringEntity("{ \"notification\": {\"body\":\"notification!\" }, " +
+            StringEntity params =new StringEntity("{ \"data\": {\"body\":\"" + fileUrl + "\" }, " +
                     "\"to\" : \"" +
                     mobileId +
                     "\"}");
             request.setEntity(params);
-            httpClient.execute(request);
+            log.info(fileUrl);
+            org.apache.http.HttpResponse resp  = httpClient.execute(request);
+            log.info(resp.toString());
+            return fileUrl;
         }catch (Exception ex) {
             throw new RuntimeException(ex);
         }
@@ -171,6 +179,12 @@ public class ImageLabelsController {
         }
     }
 
+    @RequestMapping(value = "/uploadImageAndGetLabels")
+    public List<String> uploadImageAndGetLabels(@RequestBody String imageBase64) throws IOException {
+        this.lastImageBase64 = imageBase64;
+        return getImageLabels(imageBase64);
+    }
+
     /**
      * Downloads list of labels for provided image from Google Vision API
      * @param imageInBase64 image encoded in base64
@@ -205,5 +219,11 @@ public class ImageLabelsController {
         }
         return response.getLabelAnnotations().stream()
                 .map(EntityAnnotation::getDescription).collect(Collectors.toList());
+    }
+
+    @ResponseBody
+    @RequestMapping(value = "/getLastPhoto/{id}", method = RequestMethod.GET, produces = MediaType.IMAGE_JPEG_VALUE)
+    public byte[] getLastPhoto(@PathVariable("id") Integer id) throws IOException {
+        return Base64.getDecoder().decode(photosMap.get(id));
     }
 }
