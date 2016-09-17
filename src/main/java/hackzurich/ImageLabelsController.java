@@ -169,7 +169,7 @@ public class ImageLabelsController {
      */
     @RequestMapping(value = "/getSynonyms")
     public List<String> getSynonyms(@RequestParam(value="word") String word) {
-        List<String> synonyms = ThesaurusUtil.getSynonymsMock(word); //TODO removeMock
+        List<String> synonyms = ThesaurusUtil.getSynonyms(word);
         log.info("Synonyms for word " + word + ": " + synonyms.stream().reduce((x,y) -> x + "," + y).get());
         return synonyms;
     }
