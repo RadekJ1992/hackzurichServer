@@ -122,7 +122,9 @@ public class ImageLabelsController { //TODO rename it somehow
                 .map(EntityAnnotation::getDescription)
                 .filter(annotation -> !annotation.contains(" ")) // we don't want complex keywords
                 // if any of returned labels is keyword or any synonym of these labels is the keyword return true
-                .anyMatch(annotation -> keywords.contains(annotation) || getSynonyms(annotation).removeAll(keywords))) {
+                .anyMatch(annotation -> keywords.contains(annotation)
+                                // we create new ArrayList because getSynonyms returns immutable list
+                                        || new ArrayList<>(getSynonyms(annotation)).removeAll(keywords))) {
             notifyUser();
             return "Notified user";
         } else {
