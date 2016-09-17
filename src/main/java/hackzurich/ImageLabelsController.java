@@ -8,7 +8,6 @@ import com.google.api.services.vision.v1.Vision;
 import com.google.api.services.vision.v1.VisionScopes;
 import com.google.api.services.vision.v1.model.*;
 import com.google.common.collect.ImmutableList;
-import com.google.common.io.ByteStreams;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
@@ -16,14 +15,13 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -56,6 +54,11 @@ public class ImageLabelsController { //TODO rename it somehow
     String mobileId = ""; //TODO store them as <id, keywords> map so we can handle multiple users
 
     /**
+     * Last uploaded image (currently stored in memory)
+     */
+    String lastImageBase64 = "";
+
+    /**
      * Connects to the Vision API using Application Credentials.
      */
     public Vision getVisionService() {
@@ -79,52 +82,28 @@ public class ImageLabelsController { //TODO rename it somehow
      * Uploads image via POST method, sends it to Google Vision API and sends back JSON with
      * labels and their scores
      *
-     * to try it go to http://localhost:8080/upload?imageBase64=1
+     * to try it run in console (change images.jpeg to path to image)
+     *
+     * (echo -n $(base64 images.jpeg)) | curl -H "Content-Type: application/json" -d @-  http://localhost:8080/upload
      * @param imageBase64 image encoded in base64
      * @return list of possible labels
      */
-    @RequestMapping(value = "/upload") //TODO add method = RequestMethod.POST
-    public String upload(@RequestParam(value="imageBase64") String imageBase64) throws IOException {
-        if (vision == null) {
-            vision = getVisionService();
-        }
-
+    @RequestMapping(value = "/upload", method = RequestMethod.POST)
+    public String upload(@RequestBody String imageBase64) throws IOException {
         if (mobileId.equals("")) {
             return "mobile ID not set !";
         }
-        //TODO fix base64 decoding now it throws "illegal character 20"
-        //Image img  = new Image().encodeContent(Base64.getDecoder().decode(imageBase64.replaceAll("\\", "")));
-        AnnotateImageRequest request =
-                new AnnotateImageRequest()
-                        .setImage(new Image().encodeContent(
-                                //upload random image, after fixing the bug use "img" file
-                                ByteStreams.toByteArray(
-                                        resourceLoader.getResource("classpath:maxresdefault.jpg").getInputStream())))
-                        .setFeatures(ImmutableList.of(
-                                new Feature()
-                                        .setType("LABEL_DETECTION")
-                                        .setMaxResults(10)));
-        Vision.Images.Annotate annotate =
-                vision.images()
-                        .annotate(new BatchAnnotateImagesRequest().setRequests(ImmutableList.of(request)));
-        // Due to a bug: requests to Vision API containing large images fail when GZipped.
-        annotate.setDisableGZipContent(true);
-
-        BatchAnnotateImagesResponse batchResponse = annotate.execute();
-        assert batchResponse.getResponses().size() == 1;
-        AnnotateImageResponse response = batchResponse.getResponses().get(0);
-        if (response.getLabelAnnotations() == null) {
-            throw new RuntimeException();
-        }
-        List<EntityAnnotation> annotationsList = response.getLabelAnnotations();
-
+        this.lastImageBase64 = imageBase64;
+        List<String> annotationsList = getImageLabels(imageBase64);
+        log.info("image labels from Google API: "
+                + annotationsList.stream().reduce((x, y) -> x + "," + y));
         if (annotationsList.stream()
-                .map(EntityAnnotation::getDescription)
-                .filter(annotation -> !annotation.contains(" ")) // we don't want complex keywords
+                .filter(annotation -> !annotation.contains(" ")) // we don't want complex keywords with multiple words
                 // if any of returned labels is keyword or any synonym of these labels is the keyword return true
+                // LAZY - if first one matches no other calls to thesaurus API are created
                 .anyMatch(annotation -> keywords.contains(annotation)
                                 // we create new ArrayList because getSynonyms returns immutable list
-                                        || new ArrayList<>(getSynonyms(annotation)).removeAll(keywords))) {
+                                || new ArrayList<>(getSynonyms(annotation)).removeAll(keywords))) {
             notifyUser();
             return "Notified user";
         } else {
@@ -132,6 +111,9 @@ public class ImageLabelsController { //TODO rename it somehow
         }
     }
 
+    /**
+     * Notifies user via FireBase
+     */
     public void notifyUser() {
         try (CloseableHttpClient httpClient = HttpClients.custom().build()) {
             HttpPost request = new HttpPost("https://fcm.googleapis.com/fcm/send");
@@ -153,10 +135,14 @@ public class ImageLabelsController { //TODO rename it somehow
 
     /**
      * Get word synonyms from thesaurus API via HTTP GET request
+     *
+     * Usage: http://localhost:8080/getSynonyms?word=WORD
      */
-    @RequestMapping(value = "/thesaurusTest")
+    @RequestMapping(value = "/getSynonyms")
     public List<String> getSynonyms(@RequestParam(value="word") String word) {
-        return ThesaurusUtil.getSynonymsMock(word); //TODO removeMock
+        List<String> synonyms = ThesaurusUtil.getSynonymsMock(word); //TODO removeMock
+        log.info("Synonyms for word " + word + ": " + synonyms.stream().reduce((x,y) -> x + "," + y).get());
+        return synonyms;
     }
 
     /**
@@ -174,4 +160,48 @@ public class ImageLabelsController { //TODO rename it somehow
         this.keywords = Arrays.stream(keywords.split(",")).collect(Collectors.toList());
     }
 
+    @RequestMapping(value = "/getLastImage")
+    public LastImageBean getLastImage() {
+        try {
+            return LastImageBean.builder().image(lastImageBase64).labels(getImageLabels(lastImageBase64)).build();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Downloads list of labels for provided image from Google Vision API
+     * @param imageInBase64 image encoded in base64
+     * @return list of labels
+     */
+    private List<String> getImageLabels(String imageInBase64) throws IOException {
+        if (vision == null) {
+            vision = getVisionService();
+        }
+        if (imageInBase64.equals("")) {
+            return new ArrayList<>();
+        }
+        Image img  = new Image().encodeContent(Base64.getDecoder().decode(imageInBase64));
+        AnnotateImageRequest request =
+                new AnnotateImageRequest()
+                        .setImage(img)
+                        .setFeatures(ImmutableList.of(
+                                new Feature()
+                                        .setType("LABEL_DETECTION")
+                                        .setMaxResults(10)));
+        Vision.Images.Annotate annotate =
+                vision.images()
+                        .annotate(new BatchAnnotateImagesRequest().setRequests(ImmutableList.of(request)));
+        // Due to a bug: requests to Vision API containing large images fail when GZipped.
+        annotate.setDisableGZipContent(true);
+
+        BatchAnnotateImagesResponse batchResponse = annotate.execute();
+        assert batchResponse.getResponses().size() == 1;
+        AnnotateImageResponse response = batchResponse.getResponses().get(0);
+        if (response.getLabelAnnotations() == null) {
+            throw new RuntimeException();
+        }
+        return response.getLabelAnnotations().stream()
+                .map(EntityAnnotation::getDescription).collect(Collectors.toList());
+    }
 }
