@@ -9,6 +9,14 @@ import com.google.api.services.vision.v1.VisionScopes;
 import com.google.api.services.vision.v1.model.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.ByteStreams;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.impl.client.HttpClients;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,7 +47,15 @@ public class ImageLabelsController { //TODO rename it somehow
 
     private static final String APPLICATION_NAME = "Hack Zurich 2016 1019";
 
+    /**
+     * Set of keywords
+     */
     List<String> keywords = new ArrayList<>();
+
+    /**
+     * MobileUserIdentifier
+     */
+    String mobileId = ""; //TODO store them as <id, keywords> map so we can handle multiple users
 
     /**
      * Connects to the Vision API using Application Credentials.
@@ -70,9 +86,13 @@ public class ImageLabelsController { //TODO rename it somehow
      * @return list of possible labels
      */
     @RequestMapping(value = "/upload") //TODO add method = RequestMethod.POST
-    public boolean upload(@RequestParam(value="imageBase64") String imageBase64) throws IOException {
+    public String upload(@RequestParam(value="imageBase64") String imageBase64) throws IOException {
         if (vision == null) {
             vision = getVisionService();
+        }
+
+        if (mobileId.equals("")) {
+            return "mobile ID not set !";
         }
         //TODO fix base64 decoding now it throws "illegal character 20"
         //Image img  = new Image().encodeContent(Base64.getDecoder().decode(imageBase64.replaceAll("\\", "")));
@@ -100,11 +120,35 @@ public class ImageLabelsController { //TODO rename it somehow
         }
         List<EntityAnnotation> annotationsList = response.getLabelAnnotations();
 
-        return annotationsList.stream()
+        if (annotationsList.stream()
                 .map(EntityAnnotation::getDescription)
                 .filter(annotation -> !annotation.contains(" ")) // we don't want complex keywords
                 // if any of returned labels is keyword or any synonym of these labels is the keyword return true
-                .anyMatch(annotation -> keywords.contains(annotation) || getSynonyms(annotation).removeAll(keywords));
+                .anyMatch(annotation -> keywords.contains(annotation) || getSynonyms(annotation).removeAll(keywords))) {
+            notifyUser();
+            return "Notified user";
+        } else {
+            return "User not notified";
+        }
+    }
+
+    public void notifyUser() {
+        try (CloseableHttpClient httpClient = HttpClients.custom().build()) {
+            HttpPost request = new HttpPost("https://fcm.googleapis.com/fcm/send");
+            request.addHeader("content-type", "application/json");
+            // request.addHeader("Accept","application/json");
+            request.addHeader("Authorization","key=AIzaSyATEU5Q4_ILtSJKYA07Gb1OD156akTL9VI");
+
+            StringEntity params =new StringEntity("{ \"notification\": {\"body\":\"notification!\" }, " +
+                    "\"to\" : \"" +
+                    mobileId +
+                    "\"}");
+            request.setEntity(params);
+            httpClient.execute(request);
+        }catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+
     }
 
     /**
@@ -116,11 +160,15 @@ public class ImageLabelsController { //TODO rename it somehow
     }
 
     /**
-     * Sets global keywords for image labels
+     * Sets global keywords for image labels and the mobile ID
+     *
+     * Usage: http://localhost:8080/setMobileIdAndKeywords?keywords=fire,wood,forest&mobileId=MOBILE_ID
      * @param keywords keywords seperated by comma ','
+     * @param mobileId mobile identifier
      */
-    @RequestMapping(value = "/setKeywords")
-    public void setKeywords(@RequestParam(value = "keywords") String keywords) {
+    @RequestMapping(value = "/setMobileIdAndKeywords")
+    public void setMobileIdAndKeywords(@RequestParam(value = "mobileId") String mobileId, @RequestParam(value = "keywords") String keywords) {
+        this.mobileId = mobileId;
         this.keywords = Arrays.stream(keywords.split(",")).collect(Collectors.toList());
     }
 
